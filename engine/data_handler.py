@@ -1,14 +1,85 @@
-class DataHandler:
-    '''
-    Provides OHLCV market data one bar at a time
-    source: str
-    '''
-    def __init__(self, source):
-        pass
+import pandas as pd
+import logging
+from typing import Optional
 
-    def get_next_bar(self):
-        '''
-        Returns a single OHLCV bar as a dictionary.
-        Example: { 'timestamp': '2023-01-01', 'open': 100.0, 'high': 101.2, 'low': 99.8, 'close': 100.5, 'volume': 50000 }
-        '''
-        pass
+# Set up logging for this module
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+
+class DataHandler:
+    """
+    Provides OHLCV market data one bar at a time from a CSV file.
+    """
+
+    def __init__(self, source: str):
+        """
+        Initializes the data handler by loading a CSV and preparing an iterator.
+        
+        Parameters:
+        - source (str): Path to the OHLCV CSV file with at least these columns:
+          ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+        """
+        logger.info(f"Loading data from {source}...")
+
+        try:
+            self.df = pd.read_csv(source, parse_dates=["Date"])
+        except FileNotFoundError:
+            logger.error(f"File not found: {source}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to read CSV: {e}")
+            raise
+
+        # Normalize column names
+        self.df.rename(columns=str.lower, inplace=True)
+
+        # Ensure required columns exist
+        required_cols = {"open", "high", "low", "close", "volume", "date"}
+        if not required_cols.issubset(set(self.df.columns).union(self.df.index.names)):
+            raise ValueError(f"CSV missing required columns: {required_cols - set(self.df.columns)}")
+
+        # Set date as index
+        self.df.set_index("date", inplace=True)
+
+        # Keep only essential columns
+        self.df = self.df[["open", "high", "low", "close", "volume"]]
+
+        # Create an iterator for bar-by-bar access
+        self.bar_iter = self.df.iterrows()
+
+        logger.info(f"Loaded {len(self.df)} bars from {source}")
+
+    def get_next_bar(self) -> Optional[dict]:
+        """
+        Returns the next bar of OHLCV data as a dictionary.
+        Returns None if all data has been consumed.
+
+        Output Example:
+        {
+            "timestamp": pd.Timestamp,
+            "open": float,
+            "high": float,
+            "low": float,
+            "close": float,
+            "volume": float
+        }
+        """
+        try:
+            timestamp, row = next(self.bar_iter)
+
+            logger.info(f"Returning bar at {timestamp.date()} | Close: {row['close']}")
+
+            return {
+                "timestamp": timestamp,
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+                "volume": row["volume"]
+            }
+
+        except StopIteration:
+            logger.info("No more bars available. End of dataset reached.")
+            return None
+
