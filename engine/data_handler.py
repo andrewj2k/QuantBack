@@ -1,6 +1,7 @@
 import pandas as pd
 import logging
 
+# Set up logging for this module
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -12,19 +13,18 @@ class DataHandler:
     def __init__(self, source, start_date=None, end_date=None):
         """
         Initializes the data handler by loading a CSV and preparing an iterator.
-        
+
         Parameters:
-        - source (str): Path to the OHLCV CSV file with at least these columns:
-          ['Price' (datetime), 'Open', 'High', 'Low', 'Close', 'Volume']
+        - source (str): Path to the OHLCV CSV file with this column layout:
+          ['Date', <open>, <high>, <low>, <close>, <volume>]
         - start_date (str or None): Optional start date filter (e.g., '2020-01-01')
         - end_date (str or None): Optional end date filter (e.g., '2023-01-01')
         """
         logger.info(f"Loading data from {source}...")
 
         try:
-            # Skip first 2 rows, parse "Price" as datetime
-            self.df = pd.read_csv(source, skiprows=2, parse_dates=["Price"])
-            self.df.rename(columns={"Price": "date"}, inplace=True)
+            # Skip first 2 rows and parse the date column
+            self.df = pd.read_csv(source, skiprows=2, parse_dates=["Date"])
         except FileNotFoundError:
             logger.error(f"File not found: {source}")
             raise
@@ -32,27 +32,22 @@ class DataHandler:
             logger.error(f"Failed to read CSV: {e}")
             raise
 
-        # Normalize column names
-        self.df.rename(columns=str.lower, inplace=True)
+        # Rename columns to standard names
+        self.df.columns = ["date", "open", "high", "low", "close", "volume"]
 
-        # Filter date range
+        # Filter by date range if provided
         if start_date:
             self.df = self.df[self.df["date"] >= pd.to_datetime(start_date)]
         if end_date:
             self.df = self.df[self.df["date"] <= pd.to_datetime(end_date)]
 
-        # Ensure required columns exist
-        required_cols = {"open", "high", "low", "close", "volume", "date"}
-        if not required_cols.issubset(set(self.df.columns)):
-            raise ValueError(f"CSV missing required columns: {required_cols - set(self.df.columns)}")
-
-        # Set date as index
+        # Set index to datetime
         self.df.set_index("date", inplace=True)
 
-        # Retain only essential columns
+        # Keep only required columns
         self.df = self.df[["open", "high", "low", "close", "volume"]]
 
-        # Create an iterator over the bars
+        # Create an iterator for step-by-step access
         self.bar_iter = self.df.iterrows()
 
         logger.info(f"Loaded {len(self.df)} bars from {source}")
@@ -62,7 +57,7 @@ class DataHandler:
         Returns the next bar of OHLCV data as a dictionary.
         Returns None if all data has been consumed.
 
-        Output Example:
+        Output:
         {
             "timestamp": pd.Timestamp,
             "open": float,
