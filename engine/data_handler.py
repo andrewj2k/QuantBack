@@ -1,31 +1,29 @@
 import pandas as pd
 import logging
-from typing import Optional
 
-# Set up logging for this module
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
-
 
 class DataHandler:
     """
     Provides OHLCV market data one bar at a time from a CSV file.
     """
 
-    def __init__(self, source, start_date, end_date):
+    def __init__(self, source, start_date=None, end_date=None):
         """
         Initializes the data handler by loading a CSV and preparing an iterator.
-
+        
         Parameters:
-        - source (str): Path to the OHLCV CSV file with these columns:
-            ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-        - start_date (str): YYYY-MM-DD string to filter start of data
-        - end_date (str): YYYY-MM-DD string to filter end of data
+        - source (str): Path to the OHLCV CSV file with at least these columns:
+          ['Price' (datetime), 'Open', 'High', 'Low', 'Close', 'Volume']
+        - start_date (str or None): Optional start date filter (e.g., '2020-01-01')
+        - end_date (str or None): Optional end date filter (e.g., '2023-01-01')
         """
         logger.info(f"Loading data from {source}...")
-        
+
         try:
-            self.df = pd.read_csv(source, skiprows=1, parse_dates=["Price"])
+            # Skip first 2 rows, parse "Price" as datetime
+            self.df = pd.read_csv(source, skiprows=2, parse_dates=["Price"])
             self.df.rename(columns={"Price": "date"}, inplace=True)
         except FileNotFoundError:
             logger.error(f"File not found: {source}")
@@ -34,39 +32,37 @@ class DataHandler:
             logger.error(f"Failed to read CSV: {e}")
             raise
 
-        # Normalize columns
+        # Normalize column names
         self.df.rename(columns=str.lower, inplace=True)
 
-        # Check columns
+        # Filter date range
+        if start_date:
+            self.df = self.df[self.df["date"] >= pd.to_datetime(start_date)]
+        if end_date:
+            self.df = self.df[self.df["date"] <= pd.to_datetime(end_date)]
+
+        # Ensure required columns exist
         required_cols = {"open", "high", "low", "close", "volume", "date"}
-        if not required_cols.issubset(set(self.df.columns).union(self.df.index.names)):
+        if not required_cols.issubset(set(self.df.columns)):
             raise ValueError(f"CSV missing required columns: {required_cols - set(self.df.columns)}")
 
-        # Set index
+        # Set date as index
         self.df.set_index("date", inplace=True)
 
-        # Retain OHLCV columns
+        # Retain only essential columns
         self.df = self.df[["open", "high", "low", "close", "volume"]]
 
-        # 🔁 Filter by date range
-        if start_date:
-            self.df = self.df.loc[start_date:]
-            logger.info(f"Trimmed start date to {start_date}")
-        if end_date:
-            self.df = self.df.loc[:end_date]
-            logger.info(f"Trimmed end date to {end_date}")
-
-        # Log remaining bars
-        logger.info(f"{len(self.df)} bars available after trimming")
-
-        # Create iterator
+        # Create an iterator over the bars
         self.bar_iter = self.df.iterrows()
+
+        logger.info(f"Loaded {len(self.df)} bars from {source}")
 
     def get_next_bar(self):
         """
-        Returns the next OHLCV bar as a dictionary.
+        Returns the next bar of OHLCV data as a dictionary.
+        Returns None if all data has been consumed.
 
-        Output:
+        Output Example:
         {
             "timestamp": pd.Timestamp,
             "open": float,
@@ -78,7 +74,6 @@ class DataHandler:
         """
         try:
             timestamp, row = next(self.bar_iter)
-
             logger.info(f"Returning bar at {timestamp.date()} | Close: {row['close']}")
 
             return {
@@ -93,4 +88,3 @@ class DataHandler:
         except StopIteration:
             logger.info("No more bars available. End of dataset reached.")
             return None
-
