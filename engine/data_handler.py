@@ -23,9 +23,10 @@ class DataHandler:
         - end_date (str): YYYY-MM-DD string to filter end of data
         """
         logger.info(f"Loading data from {source}...")
-
+        
         try:
-            self.df = pd.read_csv(source, parse_dates=["Date"])
+            self.df = pd.read_csv(source, skiprows=1, parse_dates=["Price"])
+            self.df.rename(columns={"Price": "date"}, inplace=True)
         except FileNotFoundError:
             logger.error(f"File not found: {source}")
             raise
