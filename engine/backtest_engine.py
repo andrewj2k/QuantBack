@@ -4,7 +4,8 @@ class BacktestEngine:
     """
 
     def __init__(self, data_handler, strategy, execution_handler, portfolio, evaluator):
-        pass
+        self.data = data_handler
+        self.strategy = strategy
 
     def run(self):
         """
@@ -15,4 +16,9 @@ class BacktestEngine:
         4. Update portfolio
         5. Results
         """
-        pass
+        bar = self.data.get_next_bar()
+        while bar:
+            signal = self.strategy.generate_signal(bar)
+            if signal:
+                print(f"Signal at {bar['timestamp'].date()}: {signal}")
+            bar = self.data.get_next_bar()
