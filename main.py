@@ -1,28 +1,51 @@
-import yaml
+import logging
+from config.config_loader import load_config
 from engine.data_handler import DataHandler
+from engine.execution_handler import ExecutionHandler
+from engine.portfolio import Portfolio
+from engine.performance import PerformanceEvaluator
 from strategies.dummy_strategy import DummyStrategy
-from engine.backtest_engine import BacktestEngine
 
-# 1. Load config
-with open("config/config.yaml", "r") as f:
-    config = yaml.safe_load(f)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 
-source = config["source"]
-start_date = config["start_date"]
-end_date = config["end_date"]
+# Load config
+config = load_config("config.yaml")
+source = config["data"]["source"]
+start_date = config["data"]["start_date"]
+end_date = config["data"]["end_date"]
+initial_cash = config["portfolio"]["initial_cash"]
 
-# 2. Initialize
+# Instantiate components
 data_handler = DataHandler(source=source, start_date=start_date, end_date=end_date)
-strategy = DummyStrategy()
+strategy = DummyStrategy()  # replace with config-based strategy selection later
+execution_handler = ExecutionHandler()
+portfolio = Portfolio(initial_cash)
+evaluator = PerformanceEvaluator()
 
-# For now, pass None for execution, portfolio, evaluator
-engine = BacktestEngine(
-    data_handler=data_handler,
-    strategy=strategy,
-    execution_handler=None,
-    portfolio=None,
-    evaluator=None
-)
+equity_curve = []
+last_close = 0
 
-# 3. Run backtest
-engine.run()
+# Run backtest loop
+bar = data_handler.get_next_bar()
+while bar is not None:
+    last_close = bar["Close"]
+
+    signal = strategy.generate_signal(bar)
+
+    if signal:
+        trade = execution_handler.execute_trade(signal, bar["Close"], bar["Date"])
+        if trade:
+            portfolio.execute_signal(signal, bar)
+
+    equity_curve.append(portfolio.market_value)
+    bar = data_handler.get_next_bar()
+
+# Final PnL
+print(f"\nFinal PnL: ${portfolio.market_value:,.2f}")
+
+# Evaluate performance
+results = evaluator.evaluate([], equity_curve)
+print("\nPerformance Metrics:")
+for k, v in results.items():
+    print(f"{k}: {v:.2%}" if isinstance(v, float) else f"{k}: {v}")

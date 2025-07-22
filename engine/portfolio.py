@@ -1,22 +1,22 @@
 class Portfolio:
-    """
-    Tracks cash, positions, and portfolio value.
-    """
+    def __init__(self, initial_cash):
+        self.cash = initial_cash
+        self.holdings = 0
+        self.last_price = 0
 
-    def __init__(self, starting_cash = 100000.0):
-        pass
+    def execute_signal(self, signal, bar):
+        price = bar["close"]
+        self.last_price = price
 
-    def update(self, trade):
-        """
-        trade: dict
-        Updates position and cash after a trade
-        """
-        pass
+        if signal == "BUY" and self.cash > price:
+            shares_to_buy = int(self.cash // price)
+            self.holdings += shares_to_buy
+            self.cash -= shares_to_buy * price
 
-    def calculate_pnl(self, current_price):
-        """
-        Calculates current PnL.
-        Returns a float
-        """
-        pass
+        elif signal == "SELL" and self.holdings > 0:
+            self.cash += self.holdings * price
+            self.holdings = 0
 
+    @property
+    def market_value(self):
+        return self.cash + (self.holdings * self.last_price)

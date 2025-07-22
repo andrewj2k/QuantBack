@@ -1,16 +1,33 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 class ExecutionHandler:
     """
-    Simulates orders based on signal.
+    Simulates market order execution.
     """
 
     def __init__(self):
-        pass
+        self.trade_id = 0
 
-    def execute_trade(self, signal, price):
+    def execute_trade(self, signal, price, timestamp):
         """
-        Simulates trade fill.
+        Simulates execution and returns trade info.
         signal: 'BUY' or 'SELL'
-        price: price at fill(assume close or mid)
-        Returns: trade dict with keys ['timestamp', 'side', 'price', 'size']
+        price: assumed fill price (usually close)
+        timestamp: time of the bar
         """
-        pass
+        if signal not in ["BUY", "SELL"]:
+            return None
+
+        self.trade_id += 1
+        trade = {
+            "id": self.trade_id,
+            "timestamp": timestamp,
+            "side": signal,
+            "price": price,
+            "size": 1  # Placeholder size 
+        }
+
+        logger.info(f"Executed trade {trade}")
+        return trade

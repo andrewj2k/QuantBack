@@ -1,4 +1,13 @@
-source: "data/SPY.csv"
-ticker: SPY
-start_date: "2021-01-01"
-end_date: "2022-01-01"
+data:
+  source: data/SPY.csv
+  start_date: "2022-01-01"
+  end_date: "2022-12-31"
+
+portfolio:
+  initial_cash: 100000.0
+
+strategy:
+  name: dummy
+  lookback_window: 20
+  entry_threshold: 1
+  exit_threshold: 1
