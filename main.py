@@ -1,51 +1,47 @@
-import logging
-from config.config_loader import load_config
 from engine.data_handler import DataHandler
+from strategies.dummy_strategy import DummyStrategy
 from engine.execution_handler import ExecutionHandler
 from engine.portfolio import Portfolio
 from engine.performance import PerformanceEvaluator
-from strategies.dummy_strategy import DummyStrategy
+import numpy as np
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
+# --- Config ---
+source = "data/SPY.csv"
+start_date = "2023-01-03"
+end_date = "2023-12-31"
+initial_cash = 100000
 
-# Load config
-config = load_config("config.yaml")
-source = config["data"]["source"]
-start_date = config["data"]["start_date"]
-end_date = config["data"]["end_date"]
-initial_cash = config["portfolio"]["initial_cash"]
-
-# Instantiate components
+# --- Initialize components ---
 data_handler = DataHandler(source=source, start_date=start_date, end_date=end_date)
-strategy = DummyStrategy()  # replace with config-based strategy selection later
+strategy = DummyStrategy()  # Plug in your actual strategy here
 execution_handler = ExecutionHandler()
 portfolio = Portfolio(initial_cash)
 evaluator = PerformanceEvaluator()
 
+# --- Tracking ---
 equity_curve = []
-last_close = 0
+trade_log = []
 
-# Run backtest loop
-bar = data_handler.get_next_bar()
-while bar is not None:
-    last_close = bar["Close"]
-
-    signal = strategy.generate_signal(bar)
+# --- Main backtest loop ---
+while data_handler.current_index < len(data_handler.data):
+    bar = data_handler.get_next_bar()
+    signal = strategy.generate_signal(bar)  # 'BUY', 'SELL', or None
 
     if signal:
-        trade = execution_handler.execute_trade(signal, bar["Close"], bar["Date"])
+        trade = execution_handler.execute_trade(signal, price=bar["close"], timestamp=bar["date"])
         if trade:
-            portfolio.execute_signal(signal, bar)
+            portfolio.execute_signal(trade["side"], bar)
+            trade_log.append(trade)
 
     equity_curve.append(portfolio.market_value)
-    bar = data_handler.get_next_bar()
+    print(f"Day {data_handler.current_index}: Portfolio = ${portfolio.market_value:.2f}")
 
-# Final PnL
-print(f"\nFinal PnL: ${portfolio.market_value:,.2f}")
+# --- Evaluate and report performance ---
+results = evaluator.evaluate(trade_log, np.array(equity_curve))
 
-# Evaluate performance
-results = evaluator.evaluate([], equity_curve)
-print("\nPerformance Metrics:")
-for k, v in results.items():
-    print(f"{k}: {v:.2%}" if isinstance(v, float) else f"{k}: {v}")
+print("\nFinal Performance Metrics:")
+for key, value in results.items():
+    if "Drawdown" in key or "Return" in key:
+        print(f"{key}: {value:.2%}")
+    else:
+        print(f"{key}: {value:.2f}")

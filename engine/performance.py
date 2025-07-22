@@ -11,7 +11,10 @@ class PerformanceEvaluator:
     def evaluate(self, trade_log, equity_curve):
         returns = np.diff(equity_curve) / equity_curve[:-1]
 
-        sharpe = np.mean(returns) / np.std(returns) * np.sqrt(252) if np.std(returns) > 0 else 0
+        sharpe = (
+            np.mean(returns) / np.std(returns) * np.sqrt(252)
+            if np.std(returns) > 0 else 0
+        )
         max_drawdown = self._calculate_max_drawdown(equity_curve)
         total_return = (equity_curve[-1] / equity_curve[0]) - 1
 
@@ -27,8 +30,7 @@ class PerformanceEvaluator:
         peak = curve[0]
         max_dd = 0
         for val in curve:
-            if val > peak:
-                peak = val
+            peak = max(peak, val)
             drawdown = (peak - val) / peak
             max_dd = max(max_dd, drawdown)
         return max_dd
