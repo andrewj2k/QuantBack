@@ -29,8 +29,15 @@ class DataHandler:
 
     def get_next_bar(self):
         if self.current_index < len(self.df):
-            bar = self.df.iloc[self.current_index]
+            row = self.df.iloc[self.current_index]
             self.current_index += 1
-            logger.info(f"Returning bar at {bar['Date']} | Close: {bar['Close']}")
-            return bar
-        return None
+            return {
+                "date": row["Date"],
+                "open": row["Open"],
+                "high": row["High"],
+                "low": row["Low"],
+                "close": row["Close"],
+                "volume": row["Volume"]
+            }
+        else:
+            return None

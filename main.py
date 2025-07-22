@@ -23,7 +23,7 @@ equity_curve = []
 trade_log = []
 
 # --- Main backtest loop ---
-while data_handler.current_index < len(data_handler.data):
+while data_handler.current_index < len(data_handler.df):
     bar = data_handler.get_next_bar()
     signal = strategy.generate_signal(bar)  # 'BUY', 'SELL', or None
 
