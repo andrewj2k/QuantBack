@@ -38,6 +38,16 @@ while data_handler.current_index < len(data_handler.df):
 
 # --- Evaluate and report performance ---
 results = evaluator.evaluate(trade_log, np.array(equity_curve))
+import pandas as pd
+
+# --- Export equity curve ---
+pd.DataFrame({
+    "Day": list(range(len(equity_curve))),
+    "Equity": equity_curve
+}).to_csv("logs/equity_curve.csv", index=False)
+
+# --- Export closed trades ---
+pd.DataFrame(portfolio.closed_trades).to_csv("logs/trade_log.csv", index=False)
 
 print("\nFinal Performance Metrics:")
 for key, value in results.items():
