@@ -1,8 +1,8 @@
-from engine.data_handler import DataHandler
-from strategies.dummy_strategy import DummyStrategy
-from engine.execution_handler import ExecutionHandler
+from engine.dataFeed import DataFeed
+from strats.dummyStrat import DummyStrat
+from engine.exec import Exec
 from engine.portfolio import Portfolio
-from engine.performance import PerformanceEvaluator
+from engine.perf import PerfEval
 import numpy as np
 import pandas as pd
 import os
@@ -11,52 +11,52 @@ os.makedirs("logs/tuning", exist_ok=True)
 
 results = []
 
-for n in range(1, 11):  # try buy_every_n from 1 to 10
-    data_handler = DataHandler("data/SPY.csv", "2023-01-03", "2023-12-31")
-    strategy = DummyStrategy(buy_every_n=n)
-    execution_handler = ExecutionHandler()
+for n in range(1, 11):  # try buyEveryN from 1 to 10
+    dataFeed = DataFeed("data/SPY.csv", "2023-01-03", "2023-12-31")
+    strat = DummyStrat(buyEveryN=n)
+    exec = Exec()
     portfolio = Portfolio(100000)
-    evaluator = PerformanceEvaluator()
+    perfEval = PerfEval()
 
-    equity_curve = []
-    trade_log = []
+    equityCurve = []
+    trades = []
 
-    while data_handler.current_index < len(data_handler.df):
-        bar = data_handler.get_next_bar()
-        signal = strategy.generate_signal(bar)
+    while dataFeed.idx < len(dataFeed.df):
+        bar = dataFeed.nextBar()
+        signal = strat.genSig(bar)
 
         if signal:
-            trade = execution_handler.execute_trade(signal, bar["close"], bar["date"])
+            trade = exec.fill(signal, bar["close"], bar["date"])
             if trade:
-                portfolio.execute_signal(trade["side"], bar)
-                trade_log.append(trade)
+                portfolio.onSignal(trade["side"], bar)
+                trades.append(trade)
 
-        equity_curve.append(portfolio.market_value)
+        equityCurve.append(portfolio.mktVal)
 
-    metrics = evaluator.evaluate(trade_log, np.array(equity_curve))
+    metrics = perfEval.calc(trades, np.array(equityCurve))
     results.append({
-        "buy_every_n": n,
-        **metrics
+        "buyEveryN": n,
+        **metrics,
     })
 
 # Save raw results
 df = pd.DataFrame(results)
-df.to_csv("logs/tuning/dummy_strategy_tuning.csv", index=False)
+df.to_csv("logs/tuning/dummyStratTuning.csv", index=False)
 
 # --- 1. Visualization ---
 import matplotlib.pyplot as plt
 
 plt.figure(figsize=(10, 6))
-plt.plot(df["buy_every_n"], df["Sharpe Ratio"], marker='o', label="Sharpe Ratio")
-plt.plot(df["buy_every_n"], df["Max Drawdown"], marker='o', label="Max Drawdown")
-plt.plot(df["buy_every_n"], df["Total Return"], marker='o', label="Total Return")
+plt.plot(df["buyEveryN"], df["Sharpe Ratio"], marker='o', label="Sharpe Ratio")
+plt.plot(df["buyEveryN"], df["Max Drawdown"], marker='o', label="Max Drawdown")
+plt.plot(df["buyEveryN"], df["Total Return"], marker='o', label="Total Return")
 plt.xlabel("Buy Every N Bars")
 plt.ylabel("Metric Value")
 plt.title("Parameter Sweep: Dummy Strategy")
 plt.grid(True)
 plt.legend()
 plt.tight_layout()
-plt.savefig("logs/tuning/parameter_sweep_plot.png")
+plt.savefig("logs/tuning/paramSweep.png")
 plt.show()
 
 # --- 2. Scoring function ---
@@ -69,7 +69,7 @@ df["Score"] = (
 
 # Sort by Score
 df = df.sort_values(by="Score", ascending=False).reset_index(drop=True)
-df.to_csv("logs/tuning/dummy_strategy_ranked.csv", index=False)
+df.to_csv("logs/tuning/dummyStratRanked.csv", index=False)
 
 # Print top result
 print("\nTop Configuration by Weighted Score:")

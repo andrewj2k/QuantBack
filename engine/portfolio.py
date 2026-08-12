@@ -1,45 +1,101 @@
 class Portfolio:
-    def __init__(self, initial_cash):
-        self.cash = initial_cash
-        self.holdings = 0
-        self.last_price = 0
-        self.open_trades = []  # list of open buy trades (FIFO)
-        self.closed_trades = []  # list of dicts with pnl, entry/exit info
+    def __init__(self, initCash):
+        self.cash = initCash
+        self.lastPrices = {}
+        self.pos = {}
+        self.openPkg = []
+        self.closedTrades = []
 
-    def execute_signal(self, signal, bar):
-        price = bar["close"]
-        self.last_price = price
+    def markToMkt(self, snap):
+        for sym, bar in snap["bars"].items():
+            self.lastPrices[sym] = bar["close"]
 
-        if signal == "BUY" and self.cash >= price:
-            shares_to_buy = int(self.cash // price)
-            if shares_to_buy > 0:
-                self.cash -= shares_to_buy * price
-                self.holdings += shares_to_buy
-                self.open_trades.append({
-                    "entry_price": price,
-                    "shares": shares_to_buy,
-                    "entry_time": bar["date"]
-                })
+    def onTrades(self, trades, snap):
+        if not trades:
+            return
 
-        elif signal == "SELL" and self.holdings > 0:
-            proceeds = self.holdings * price
-            self.cash += proceeds
+        if self.isFlat:
+            self._openPkg(trades, snap["date"])
+            return
 
-            # Close all open trades
-            for trade in self.open_trades:
-                pnl = (price - trade["entry_price"]) * trade["shares"]
-                self.closed_trades.append({
-                    "entry_time": trade["entry_time"],
-                    "exit_time": bar["date"],
-                    "entry_price": trade["entry_price"],
-                    "exit_price": price,
-                    "shares": trade["shares"],
-                    "pnl": pnl
-                })
+        self._closePkg(trades, snap["date"])
 
-            self.open_trades = []
-            self.holdings = 0
+    def _openPkg(self, trades, ts):
+        pkg = []
+        unitCash = self.cash / max(len(trades), 1)
+
+        for trade in trades:
+            sym = trade["symbol"]
+            side = trade["side"]
+            price = trade["price"]
+            shares = max(int(unitCash // price), 1)
+            signedQty = shares if side == "BUY" else -shares
+
+            self.cash -= signedQty * price
+            self.pos[sym] = self.pos.get(sym, 0) + signedQty
+            pkg.append({
+                "symbol": sym,
+                "side": side,
+                "entry_price": price,
+                "shares": shares,
+                "entry_time": ts,
+            })
+
+        self.openPkg = pkg
+
+    def _closePkg(self, trades, ts):
+        openBySym = {leg["symbol"]: leg for leg in self.openPkg}
+
+        for trade in trades:
+            sym = trade["symbol"]
+            if sym not in openBySym:
+                continue
+
+            openLeg = openBySym[sym]
+            qty = self.pos.get(sym, 0)
+            self.cash += qty * trade["price"]
+            self.pos[sym] = 0
+
+            if openLeg["side"] == "BUY":
+                pnl = (trade["price"] - openLeg["entry_price"]) * openLeg["shares"]
+            else:
+                pnl = (openLeg["entry_price"] - trade["price"]) * openLeg["shares"]
+
+            self.closedTrades.append({
+                "symbol": sym,
+                "entry_time": openLeg["entry_time"],
+                "exit_time": ts,
+                "entry_price": openLeg["entry_price"],
+                "exit_price": trade["price"],
+                "shares": openLeg["shares"],
+                "side": openLeg["side"],
+                "pnl": pnl,
+            })
+
+        self.pos = {sym: qty for sym, qty in self.pos.items() if qty != 0}
+        self.openPkg = []
+
+    def hasPos(self, sym):
+        return self.pos.get(sym, 0) != 0
+
+    def closeOrders(self):
+        orders = []
+        for sym, qty in self.pos.items():
+            side = "SELL" if qty > 0 else "BUY"
+            orders.append({"symbol": sym, "side": side})
+        return orders
 
     @property
-    def market_value(self):
-        return self.cash + self.holdings * self.last_price
+    def isFlat(self):
+        return len(self.pos) == 0
+
+    @property
+    def isPairOpen(self):
+        return len(self.pos) == 2
+
+    @property
+    def mktVal(self):
+        posVal = 0
+        for sym, qty in self.pos.items():
+            posVal += qty * self.lastPrices.get(sym, 0)
+        return self.cash + posVal
