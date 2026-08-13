@@ -21,7 +21,7 @@ class RelCloseStrat(BaseStrat):
         anchorClose = bars[self.anchorSym]["close"]
         compareClose = bars[self.compareSym]["close"]
 
-        # Day 2 goal is architecture validation, not alpha.
+        # goal is validation, not alpha yet
         if portfolio.isFlat and anchorClose < compareClose:
             return {"symbol": self.anchorSym, "side": "BUY"}
 

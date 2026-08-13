@@ -7,16 +7,26 @@ backtest:
 
 portfolio:
   initCash: 100000.0
+  maxPkgFrac: 0.9
+  maxDollarPerLeg: 45000.0
+
+exec:
+  slipBps: 5.0
+  feePerOrder: 1.0
 
 strat:
   name: pair
   params:
     symA: SPY
     symB: IVV
+    spreadMode: log
     lookback: 20
     entryZ: 1.5
     exitZ: 0.3
+    stopLossPct: 0.005
+    maxHoldBars: 20
 
 output:
   equityCurveCsv: logs/equityCurve.csv
   tradeLogCsv: logs/tradeLog.csv
+  signalLogCsv: logs/pairSignal.csv

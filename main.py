@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from analytics.report import printStats, saveRun
 from config.configLoader import loadConfig
 from engine.btEngine import BtEngine
@@ -24,9 +26,7 @@ def buildStrat(stratCfg):
     raise ValueError(f"Unsupported strategy: {stratName}")
 
 
-def main():
-    cfg = loadConfig()
-
+def runBacktest(cfg, saveOutputs=True, printSummary=True):
     dataFeed = DataFeed(
         source=cfg["data"]["source"],
         symbols=cfg["data"]["symbols"],
@@ -34,8 +34,15 @@ def main():
         endDate=cfg["backtest"]["endDate"],
     )
     strat = buildStrat(cfg["strat"])
-    exec = Exec()
-    portfolio = Portfolio(cfg["portfolio"]["initCash"])
+    exec = Exec(
+        slipBps=cfg["exec"]["slipBps"],
+        feePerOrder=cfg["exec"]["feePerOrder"],
+    )
+    portfolio = Portfolio(
+        cfg["portfolio"]["initCash"],
+        maxPkgFrac=cfg["portfolio"]["maxPkgFrac"],
+        maxDollarPerLeg=cfg["portfolio"]["maxDollarPerLeg"],
+    )
     perfEval = PerfEval()
 
     engine = BtEngine(
@@ -47,12 +54,33 @@ def main():
     )
     results = engine.run()
 
-    saveRun(
-        results,
-        equityPath=cfg["output"]["equityCurveCsv"],
-        tradesPath=cfg["output"]["tradeLogCsv"],
-    )
-    printStats(results["metrics"])
+    if saveOutputs:
+        saveRun(
+            results,
+            equityPath=cfg["output"]["equityCurveCsv"],
+            tradesPath=cfg["output"]["tradeLogCsv"],
+            signalPath=cfg["output"].get("signalLogCsv"),
+        )
+    if printSummary:
+        printStats(results["metrics"])
+
+    return results
+
+
+def withOverrides(cfg, startDate=None, endDate=None, stratParams=None):
+    nextCfg = deepcopy(cfg)
+    if startDate is not None:
+        nextCfg["backtest"]["startDate"] = startDate
+    if endDate is not None:
+        nextCfg["backtest"]["endDate"] = endDate
+    if stratParams:
+        nextCfg["strat"]["params"].update(stratParams)
+    return nextCfg
+
+
+def main():
+    cfg = loadConfig()
+    runBacktest(cfg)
 
 
 if __name__ == "__main__":

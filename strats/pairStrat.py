@@ -1,4 +1,5 @@
 from collections import deque
+from math import log
 from statistics import mean, pstdev
 
 from strats.baseStrat import BaseStrat
@@ -8,8 +9,8 @@ class PairStrat(BaseStrat):
     """
     First real spread strategy.
 
-    We use a simple raw spread for learning:
-        spread = closeA - closeB
+    We use a log spread for learning:
+        spread = log(closeA) - log(closeB)
 
     Then we compute a rolling z-score and trade the relative move:
     - if spread is too low, buy A / sell B
@@ -17,45 +18,169 @@ class PairStrat(BaseStrat):
     - exit when the spread mean reverts toward zero
     """
 
-    def __init__(self, symA="SPY", symB="IVV", lookback=20, entryZ=1.5, exitZ=0.3):
+    def __init__(
+        self,
+        symA="SPY",
+        symB="IVV",
+        spreadMode="log",
+        lookback=20,
+        entryZ=1.5,
+        exitZ=0.3,
+        stopLossPct=0.005,
+        maxHoldBars=20,
+    ):
         self.symA = symA
         self.symB = symB
+        self.spreadMode = spreadMode
         self.lookback = lookback
         self.entryZ = entryZ
         self.exitZ = exitZ
+        self.stopLossPct = stopLossPct
+        self.maxHoldBars = maxHoldBars
         self.spreads = deque(maxlen=lookback)
+        self.signalLog = []
+        self.state = "flat"
+        self.holdBars = 0
+
+    def _calcSpread(self, bars):
+        priceA = bars[self.symA]["close"]
+        priceB = bars[self.symB]["close"]
+
+        if self.spreadMode == "log":
+            return log(priceA) - log(priceB)
+        if self.spreadMode == "raw":
+            return priceA - priceB
+
+        raise ValueError(f"Unsupported spread mode: {self.spreadMode}")
+
+    def _logRow(self, snap, spread, spreadMean, spreadStd, zScore, action, portfolio=None):
+        self.signalLog.append({
+            "date": snap["date"],
+            "symA": self.symA,
+            "symB": self.symB,
+            "spreadMode": self.spreadMode,
+            "spread": spread,
+            "spreadMean": spreadMean,
+            "spreadStd": spreadStd,
+            "zScore": zScore,
+            "state": self.state,
+            "holdBars": self.holdBars,
+            "pkgPnl": None if portfolio is None else portfolio.pkgPnl,
+            "pkgRet": None if portfolio is None else portfolio.pkgRet,
+            "action": action,
+        })
 
     def genSig(self, snap, portfolio):
         bars = snap["bars"]
         if self.symA not in bars or self.symB not in bars:
             return None
 
-        spread = bars[self.symA]["close"] - bars[self.symB]["close"]
+        spread = self._calcSpread(bars)
         self.spreads.append(spread)
 
         if len(self.spreads) < self.lookback:
+            self._logRow(snap, spread, None, None, None, "warmup", portfolio)
             return None
 
         spreadMean = mean(self.spreads)
         spreadStd = pstdev(self.spreads)
         if spreadStd == 0:
+            self._logRow(snap, spread, spreadMean, spreadStd, None, "flat-std", portfolio)
             return None
 
         zScore = (spread - spreadMean) / spreadStd
 
         if portfolio.isFlat:
+            self.holdBars = 0
             if zScore < -self.entryZ:
+                self.state = "longSpread"
+                self._logRow(snap, spread, spreadMean, spreadStd, zScore, "enterLongSpread", portfolio)
                 return [
-                    {"symbol": self.symA, "side": "BUY"},
-                    {"symbol": self.symB, "side": "SELL"},
+                    {
+                        "symbol": self.symA,
+                        "side": "BUY",
+                        "meta": {
+                            "pairSide": "longSpread",
+                            "entryZ": zScore,
+                            "entrySpread": spread,
+                        },
+                    },
+                    {
+                        "symbol": self.symB,
+                        "side": "SELL",
+                        "meta": {
+                            "pairSide": "longSpread",
+                            "entryZ": zScore,
+                            "entrySpread": spread,
+                        },
+                    },
                 ]
             if zScore > self.entryZ:
+                self.state = "shortSpread"
+                self._logRow(snap, spread, spreadMean, spreadStd, zScore, "enterShortSpread", portfolio)
                 return [
-                    {"symbol": self.symA, "side": "SELL"},
-                    {"symbol": self.symB, "side": "BUY"},
+                    {
+                        "symbol": self.symA,
+                        "side": "SELL",
+                        "meta": {
+                            "pairSide": "shortSpread",
+                            "entryZ": zScore,
+                            "entrySpread": spread,
+                        },
+                    },
+                    {
+                        "symbol": self.symB,
+                        "side": "BUY",
+                        "meta": {
+                            "pairSide": "shortSpread",
+                            "entryZ": zScore,
+                            "entrySpread": spread,
+                        },
+                    },
                 ]
 
+        if portfolio.isPairOpen:
+            self.holdBars += 1
+
+        if portfolio.isPairOpen and portfolio.pkgRet <= -self.stopLossPct:
+            self._logRow(snap, spread, spreadMean, spreadStd, zScore, "stopLossExit", portfolio)
+            closeOrders = portfolio.closeOrders({
+                "exitZ": zScore,
+                "exitSpread": spread,
+                "pairSide": self.state,
+                "exitReason": "stopLoss",
+                "holdBars": self.holdBars,
+            })
+            self.state = "flat"
+            self.holdBars = 0
+            return closeOrders
+
+        if portfolio.isPairOpen and self.holdBars >= self.maxHoldBars:
+            self._logRow(snap, spread, spreadMean, spreadStd, zScore, "maxHoldExit", portfolio)
+            closeOrders = portfolio.closeOrders({
+                "exitZ": zScore,
+                "exitSpread": spread,
+                "pairSide": self.state,
+                "exitReason": "maxHold",
+                "holdBars": self.holdBars,
+            })
+            self.state = "flat"
+            self.holdBars = 0
+            return closeOrders
+
         if portfolio.isPairOpen and abs(zScore) < self.exitZ:
-            return portfolio.closeOrders()
+            self._logRow(snap, spread, spreadMean, spreadStd, zScore, "meanRevertExit", portfolio)
+            closeOrders = portfolio.closeOrders({
+                "exitZ": zScore,
+                "exitSpread": spread,
+                "pairSide": self.state,
+                "exitReason": "meanRevert",
+                "holdBars": self.holdBars,
+            })
+            self.state = "flat"
+            self.holdBars = 0
+            return closeOrders
+
+        self._logRow(snap, spread, spreadMean, spreadStd, zScore, "hold", portfolio)
 
         return None

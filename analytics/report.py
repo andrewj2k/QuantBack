@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 
-def saveRun(results, equityPath, tradesPath):
+def saveRun(results, equityPath, tradesPath, signalPath=None):
     """
     Persist core backtest outputs for later analysis and plotting.
     """
@@ -18,6 +18,10 @@ def saveRun(results, equityPath, tradesPath):
     ).to_csv(equityPath, index=False)
 
     pd.DataFrame(results["closedTrades"]).to_csv(tradesPath, index=False)
+
+    if signalPath and results.get("signalLog"):
+        Path(signalPath).parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(results["signalLog"]).to_csv(signalPath, index=False)
 
 
 def printStats(metrics):

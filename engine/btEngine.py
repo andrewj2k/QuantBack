@@ -46,5 +46,6 @@ class BtEngine:
             "equityCurve": equityCurve,
             "trades": trades,
             "closedTrades": self.portfolio.closedTrades,
+            "signalLog": getattr(self.strat, "signalLog", []),
             "metrics": metrics,
         }
