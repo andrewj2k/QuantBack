@@ -4,7 +4,7 @@ import pandas as pd
 import yfinance as yf
 
 
-SYMS = ["SPY", "IVV", "QQQ"]
+SYMS = ["SPY", "IVV", "VOO", "QQQ", "XLK"]
 START = "2023-01-01"
 END = "2023-12-31"
 OUT_PATH = Path("data/prices.csv")

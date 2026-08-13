@@ -67,7 +67,7 @@ def runBacktest(cfg, saveOutputs=True, printSummary=True):
     return results
 
 
-def withOverrides(cfg, startDate=None, endDate=None, stratParams=None):
+def withOverrides(cfg, startDate=None, endDate=None, stratParams=None, symbols=None):
     nextCfg = deepcopy(cfg)
     if startDate is not None:
         nextCfg["backtest"]["startDate"] = startDate
@@ -75,6 +75,8 @@ def withOverrides(cfg, startDate=None, endDate=None, stratParams=None):
         nextCfg["backtest"]["endDate"] = endDate
     if stratParams:
         nextCfg["strat"]["params"].update(stratParams)
+    if symbols is not None:
+        nextCfg["data"]["symbols"] = symbols
     return nextCfg
 
 

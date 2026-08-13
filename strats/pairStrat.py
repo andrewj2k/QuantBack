@@ -23,6 +23,7 @@ class PairStrat(BaseStrat):
         symA="SPY",
         symB="IVV",
         spreadMode="log",
+        hedgeMode="unit",
         lookback=20,
         entryZ=1.5,
         exitZ=0.3,
@@ -32,23 +33,53 @@ class PairStrat(BaseStrat):
         self.symA = symA
         self.symB = symB
         self.spreadMode = spreadMode
+        self.hedgeMode = hedgeMode
         self.lookback = lookback
         self.entryZ = entryZ
         self.exitZ = exitZ
         self.stopLossPct = stopLossPct
         self.maxHoldBars = maxHoldBars
         self.spreads = deque(maxlen=lookback)
+        self.logA = deque(maxlen=lookback)
+        self.logB = deque(maxlen=lookback)
         self.signalLog = []
         self.state = "flat"
         self.holdBars = 0
+        self.hedgeRatio = 1.0
+
+    def _calcBeta(self):
+        xs = list(self.logB)
+        ys = list(self.logA)
+        if len(xs) < 2:
+            return 1.0
+
+        meanX = mean(xs)
+        meanY = mean(ys)
+        varX = sum((x - meanX) ** 2 for x in xs) / len(xs)
+        if varX == 0:
+            return 1.0
+        covXY = sum((x - meanX) * (y - meanY) for x, y in zip(xs, ys)) / len(xs)
+        return covXY / varX
+
+    def _updateHedgeRatio(self):
+        if self.hedgeMode == "unit":
+            self.hedgeRatio = 1.0
+        elif self.hedgeMode == "staticBeta":
+            # Estimate beta once after the first warmup window and keep it fixed.
+            if len(self.logA) == self.lookback and self.hedgeRatio == 1.0:
+                self.hedgeRatio = self._calcBeta()
+        else:
+            raise ValueError(f"Unsupported hedge mode: {self.hedgeMode}")
 
     def _calcSpread(self, bars):
-        priceA = bars[self.symA]["close"]
-        priceB = bars[self.symB]["close"]
+        logA = log(bars[self.symA]["close"])
+        logB = log(bars[self.symB]["close"])
 
         if self.spreadMode == "log":
-            return log(priceA) - log(priceB)
+            return logA - self.hedgeRatio * logB
         if self.spreadMode == "raw":
+            priceA = bars[self.symA]["close"]
+            priceB = bars[self.symB]["close"]
             return priceA - priceB
 
         raise ValueError(f"Unsupported spread mode: {self.spreadMode}")
@@ -59,6 +90,8 @@ class PairStrat(BaseStrat):
             "symA": self.symA,
             "symB": self.symB,
             "spreadMode": self.spreadMode,
+            "hedgeMode": self.hedgeMode,
+            "hedgeRatio": self.hedgeRatio,
             "spread": spread,
             "spreadMean": spreadMean,
             "spreadStd": spreadStd,
@@ -75,12 +108,16 @@ class PairStrat(BaseStrat):
         if self.symA not in bars or self.symB not in bars:
             return None
 
+        self.logA.append(log(bars[self.symA]["close"]))
+        self.logB.append(log(bars[self.symB]["close"]))
+        self._updateHedgeRatio()
         spread = self._calcSpread(bars)
-        self.spreads.append(spread)
 
-        if len(self.spreads) < self.lookback:
+        if len(self.logA) < self.lookback:
             self._logRow(snap, spread, None, None, None, "warmup", portfolio)
             return None
+
+        self.spreads.append(spread)
 
         spreadMean = mean(self.spreads)
         spreadStd = pstdev(self.spreads)

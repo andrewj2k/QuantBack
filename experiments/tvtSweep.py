@@ -19,10 +19,19 @@ SPLITS = {
 }
 
 PARAM_GRID = {
-    "lookback": [15, 20, 30],
+    "lookback": [20, 30],
     "entryZ": [1.5, 2.0],
     "exitZ": [0.2, 0.3],
 }
+
+PAIR_UNIVERSE = [
+    ("SPY", "IVV"),
+    ("SPY", "VOO"),
+    ("IVV", "VOO"),
+    ("QQQ", "XLK"),
+]
+
+HEDGE_MODES = ["unit", "staticBeta"]
 
 OUT_DIR = Path("logs/experiments")
 
@@ -33,12 +42,13 @@ def iterGrid(grid):
         yield dict(zip(keys, values))
 
 
-def runSplit(cfg, splitName, startDate, endDate, stratParams):
+def runSplit(cfg, splitName, startDate, endDate, stratParams, symbols):
     splitCfg = withOverrides(
         cfg,
         startDate=startDate,
         endDate=endDate,
         stratParams=stratParams,
+        symbols=symbols,
     )
     results = runBacktest(splitCfg, saveOutputs=False, printSummary=False)
     metrics = results["metrics"]
@@ -71,10 +81,27 @@ def main():
     cfg = loadConfig()
     rows = []
 
-    for stratParams in iterGrid(PARAM_GRID):
-        print(f"Running params: {stratParams}")
-        for splitName, (startDate, endDate) in SPLITS.items():
-            rows.append(runSplit(cfg, splitName, startDate, endDate, stratParams))
+    for symA, symB in PAIR_UNIVERSE:
+        for hedgeMode in HEDGE_MODES:
+            for stratParams in iterGrid(PARAM_GRID):
+                fullParams = {
+                    "symA": symA,
+                    "symB": symB,
+                    "hedgeMode": hedgeMode,
+                    **stratParams,
+                }
+                print(f"Running params: {fullParams}")
+                for splitName, (startDate, endDate) in SPLITS.items():
+                    rows.append(
+                        runSplit(
+                            cfg,
+                            splitName,
+                            startDate,
+                            endDate,
+                            fullParams,
+                            symbols=sorted({symA, symB}),
+                        )
+                    )
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     longDf = pd.DataFrame(rows)
@@ -84,7 +111,7 @@ def main():
     wideDf = (
         longDf
         .pivot_table(
-            index=["lookback", "entryZ", "exitZ"],
+            index=["symA", "symB", "hedgeMode", "lookback", "entryZ", "exitZ"],
             columns="split",
             values=["sharpe", "maxDrawdown", "totalReturn", "numClosedLegs"],
         )
@@ -103,6 +130,9 @@ def main():
 
     wideDf["isBestVal"] = (
         (wideDf["lookback"] == bestVal["lookback"]) &
+        (wideDf["symA"] == bestVal["symA"]) &
+        (wideDf["symB"] == bestVal["symB"]) &
+        (wideDf["hedgeMode"] == bestVal["hedgeMode"]) &
         (wideDf["entryZ"] == bestVal["entryZ"]) &
         (wideDf["exitZ"] == bestVal["exitZ"])
     )
@@ -123,6 +153,9 @@ def main():
     bestPath.write_text(
         "\n".join([
             "Best parameter set by validation score:",
+            f"symA={bestVal['symA']}",
+            f"symB={bestVal['symB']}",
+            f"hedgeMode={bestVal['hedgeMode']}",
             f"lookback={int(bestVal['lookback'])}",
             f"entryZ={bestVal['entryZ']}",
             f"exitZ={bestVal['exitZ']}",

@@ -1,6 +1,6 @@
 data:
   source: data/prices.csv
-  symbols: [SPY, IVV, QQQ]
+  symbols: [SPY, IVV, VOO, QQQ, XLK]
 backtest:
   startDate: "2023-01-03"
   endDate: "2023-12-31"
@@ -20,6 +20,7 @@ strat:
     symA: SPY
     symB: IVV
     spreadMode: log
+    hedgeMode: unit
     lookback: 20
     entryZ: 1.5
     exitZ: 0.3
