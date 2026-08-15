@@ -1,16 +1,19 @@
 import pandas as pd
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
 class DataFeed:
+    REQ_COLS = ["date", "symbol", "open", "high", "low", "close", "volume"]
+
     def __init__(self, source, symbols, startDate, endDate):
         logger.info(f"Loading data from {source}...")
 
         try:
-            df = pd.read_csv(source)
-            df["date"] = pd.to_datetime(df["date"])
+            df = self._loadRaw(source)
+            df = self._normalize(df)
 
             df = df[
                 (df["date"] >= pd.to_datetime(startDate)) &
@@ -34,8 +37,31 @@ class DataFeed:
             )
 
         except Exception as e:
-            logger.error(f"Failed to read CSV: {e}")
+            logger.error(f"Failed to read data: {e}")
             raise
+
+    def _loadRaw(self, source):
+        ext = Path(source).suffix.lower()
+        if ext == ".csv":
+            return self._loadCsv(source)
+        if ext == ".parquet":
+            return self._loadParquet(source)
+        raise ValueError(f"Unsupported data file type: {ext}")
+
+    def _loadCsv(self, source):
+        return pd.read_csv(source)
+
+    def _loadParquet(self, source):
+        return pd.read_parquet(source)
+
+    def _normalize(self, df):
+        missing = [col for col in self.REQ_COLS if col not in df.columns]
+        if missing:
+            raise ValueError(f"Missing required columns: {missing}")
+
+        df = df[self.REQ_COLS].copy()
+        df["date"] = pd.to_datetime(df["date"])
+        return df
 
     def nextSnap(self):
         if self.idx < len(self.dates):

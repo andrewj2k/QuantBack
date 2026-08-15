@@ -1,7 +1,7 @@
 from collections import deque
 from math import log
-from statistics import mean, pstdev
 
+from engine.fastStats import calcBeta, calcSpreadWindowStats, pickBackend
 from strats.baseStrat import BaseStrat
 
 
@@ -29,6 +29,7 @@ class PairStrat(BaseStrat):
         exitZ=0.3,
         stopLossPct=0.005,
         maxHoldBars=20,
+        mathBackend="auto",
     ):
         self.symA = symA
         self.symB = symB
@@ -39,6 +40,7 @@ class PairStrat(BaseStrat):
         self.exitZ = exitZ
         self.stopLossPct = stopLossPct
         self.maxHoldBars = maxHoldBars
+        self.mathBackend = pickBackend(mathBackend)
         self.spreads = deque(maxlen=lookback)
         self.logA = deque(maxlen=lookback)
         self.logB = deque(maxlen=lookback)
@@ -48,18 +50,7 @@ class PairStrat(BaseStrat):
         self.hedgeRatio = 1.0
 
     def _calcBeta(self):
-        xs = list(self.logB)
-        ys = list(self.logA)
-        if len(xs) < 2:
-            return 1.0
-
-        meanX = mean(xs)
-        meanY = mean(ys)
-        varX = sum((x - meanX) ** 2 for x in xs) / len(xs)
-        if varX == 0:
-            return 1.0
-        covXY = sum((x - meanX) * (y - meanY) for x, y in zip(xs, ys)) / len(xs)
-        return covXY / varX
+        return calcBeta(self.logB, self.logA, backend=self.mathBackend)
 
     def _updateHedgeRatio(self):
         if self.hedgeMode == "unit":
@@ -91,6 +82,7 @@ class PairStrat(BaseStrat):
             "symB": self.symB,
             "spreadMode": self.spreadMode,
             "hedgeMode": self.hedgeMode,
+            "mathBackend": self.mathBackend,
             "hedgeRatio": self.hedgeRatio,
             "spread": spread,
             "spreadMean": spreadMean,
@@ -118,14 +110,13 @@ class PairStrat(BaseStrat):
             return None
 
         self.spreads.append(spread)
-
-        spreadMean = mean(self.spreads)
-        spreadStd = pstdev(self.spreads)
-        if spreadStd == 0:
+        spread, spreadMean, spreadStd, zScore = calcSpreadWindowStats(
+            self.spreads,
+            backend=self.mathBackend,
+        )
+        if zScore is None:
             self._logRow(snap, spread, spreadMean, spreadStd, None, "flat-std", portfolio)
             return None
-
-        zScore = (spread - spreadMean) / spreadStd
 
         if portfolio.isFlat:
             self.holdBars = 0

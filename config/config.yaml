@@ -1,5 +1,5 @@
 data:
-  source: data/prices.csv
+  source: data/prices.parquet
   symbols: [SPY, IVV, VOO, QQQ, XLK]
 backtest:
   startDate: "2023-01-03"
@@ -26,6 +26,7 @@ strat:
     exitZ: 0.3
     stopLossPct: 0.005
     maxHoldBars: 20
+    mathBackend: auto
 
 output:
   equityCurveCsv: logs/equityCurve.csv
